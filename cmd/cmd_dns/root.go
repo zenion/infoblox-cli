@@ -4,6 +4,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	cmd_dns_records "github.com/zenion/infoblox-cli/cmd/cmd_dns/records"
+	cmd_dns_zones "github.com/zenion/infoblox-cli/cmd/cmd_dns/zones"
 )
 
 var Root = &cobra.Command{
@@ -19,5 +21,6 @@ func Execute() {
 }
 
 func init() {
-	Root.AddCommand(cmdGet)
+	Root.AddCommand(cmd_dns_zones.Root)
+	Root.AddCommand(cmd_dns_records.Root)
 }
