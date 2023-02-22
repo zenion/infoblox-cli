@@ -1,4 +1,4 @@
-# Infoblox CLI tool for managing various infoblox things
+# Infoblox CLI tool written in go for managing various infoblox things
 
 To get started, download app from the releases and configure with:
 ```bash
