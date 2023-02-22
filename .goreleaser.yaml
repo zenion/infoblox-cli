@@ -13,6 +13,7 @@ builds:
       - darwin
     ldflags:
       - -X main.Version={{.Version}}
+    binary: infoblox
 archives:
   - format: binary
 # brews:
