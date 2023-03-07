@@ -2,6 +2,7 @@ package infoblox
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -29,7 +30,9 @@ func New(host string, username string, password string) Client {
 }
 
 func (c *Client) GetZones() ([]Zone, error) {
-	res, err := c.httpClient.R().SetResult(&[]Zone{}).Get("/zone_auth")
+	res, err := c.httpClient.R().
+		SetResult(&[]Zone{}).
+		Get("/zone_auth")
 	if err != nil {
 		return nil, err
 	}
@@ -41,28 +44,51 @@ func (c *Client) GetZones() ([]Zone, error) {
 }
 
 func (c *Client) GetZoneRecords(zone string) ([]HostRecord, error) {
-	res, err := c.httpClient.R().SetResult(&[]HostRecord{}).Get("/record:host?zone=" + zone)
+	var records []HostRecord
+
+	res, err := c.httpClient.R().
+		SetResult(&PagedHostRecords{}).
+		SetError(&InfobloxError{}).
+		Get("/record:host?zone=" + zone + "&_return_as_object=1&_paging=1&_max_results=1000")
 	if err != nil {
-		return nil, err
+		return nil, errors.New(res.Error().(*InfobloxError).Text)
 	}
-	records := *res.Result().(*[]HostRecord)
+	PagedRecords := *res.Result().(*PagedHostRecords)
+	records = append(records, PagedRecords.Result...)
+
+	for PagedRecords.NextPageId != "" {
+		fmt.Println("Next page: " + PagedRecords.NextPageId)
+		res, err := c.httpClient.R().
+			SetResult(&PagedHostRecords{}).
+			SetError(&InfobloxError{}).
+			Get("/record:host?zone=" + zone + "&_return_as_object=1&_paging=1&_max_results=1000&_page_id=" + PagedRecords.NextPageId)
+		if err != nil {
+			return nil, errors.New(res.Error().(*InfobloxError).Text)
+		}
+		PagedRecords = *res.Result().(*PagedHostRecords)
+		records = append(records, PagedRecords.Result...)
+	}
+
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Name < records[j].Name
 	})
 
+	// return records, nil
 	return records, nil
 }
 
 func (c *Client) AddHostRecord(fqdn string, ip string, view string) (any, error) {
-	res, err := c.httpClient.R().SetBody(map[string]any{
-		"name": fqdn,
-		"ipv4addrs": []map[string]any{
-			{
-				"ipv4addr": ip,
+	res, err := c.httpClient.R().
+		SetBody(map[string]any{
+			"name": fqdn,
+			"ipv4addrs": []map[string]any{
+				{
+					"ipv4addr": ip,
+				},
 			},
-		},
-		"view": view,
-	}).Post("/record:host")
+			"view": view,
+		}).
+		Post("/record:host")
 	if err != nil {
 		return "", err
 	}
@@ -70,7 +96,9 @@ func (c *Client) AddHostRecord(fqdn string, ip string, view string) (any, error)
 }
 
 func (c *Client) GetHostRecord(fqdn string, view string) ([]HostRecord, error) {
-	res, err := c.httpClient.R().SetResult(&[]HostRecord{}).Get("/record:host?name=" + fqdn + "&view=" + view)
+	res, err := c.httpClient.R().
+		SetResult(&[]HostRecord{}).
+		Get("/record:host?name=" + fqdn + "&view=" + view)
 	if err != nil {
 		return []HostRecord{}, err
 	}
@@ -98,18 +126,29 @@ func (c *Client) RemoveHostRecord(fqdn string, view string) (any, error) {
 }
 
 type Zone struct {
-	Ref  string `json:"_ref"`
-	Fqdn string `json:"fqdn"`
-	View string `json:"view"`
+	Ref  string `json:"_ref,omitempty"`
+	Fqdn string `json:"fqdn,omitempty"`
+	View string `json:"view,omitempty"`
 }
 
 type HostRecord struct {
-	Ref       string `json:"_ref"`
-	Name      string `json:"name"`
-	View      string `json:"view"`
+	Ref       string `json:"_ref,omitempty"`
+	Name      string `json:"name,omitempty"`
+	View      string `json:"view,omitempty"`
 	Ipv4Addrs []struct {
-		Ref      string `json:"_ref"`
-		Host     string `json:"host"`
-		Ipv4Addr string `json:"ipv4addr"`
-	} `json:"ipv4addrs"`
+		Ref      string `json:"_ref,omitempty"`
+		Host     string `json:"host,omitempty"`
+		Ipv4Addr string `json:"ipv4addr,omitempty"`
+	} `json:"ipv4addrs,omitempty"`
+}
+
+type PagedHostRecords struct {
+	Result     []HostRecord `json:"result,omitempty"`
+	NextPageId string       `json:"next_page_id,omitempty"`
+}
+
+type InfobloxError struct {
+	Error string `json:"Error,omitempty"`
+	Code  string `json:"code,omitempty"`
+	Text  string `json:"text,omitempty"`
 }
